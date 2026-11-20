@@ -33,6 +33,8 @@ pub fn convert_lockfile_to_nix_expression(contents: String, options: Options) ->
     };
 
     let mut packages = lockfile.packages();
+    // `bun install` resolves workspace and `file:` packages from the source tree
+    packages.retain(|pkg| !matches!(pkg.fetcher, package::Fetcher::CopyToStore { .. }));
     packages.sort();
     packages.dedup_by(|a, b| a.name == b.name);
 
@@ -72,5 +74,24 @@ mod tests {
             convert_lockfile_to_nix_expression(lock(4), opts()),
             Err(Error::UnsupportedLockfileVersion(4))
         ));
+    }
+
+    #[test]
+    fn omits_packages_from_the_source_tree() {
+        let lock = r#"{
+  "lockfileVersion": 1,
+  "workspaces": { "": { "name": "t" } },
+  "packages": {
+    "@t/app": ["@t/app@workspace:packages/app"],
+    "left": ["left@./vendor/left.tgz", {}],
+    "@pierre/diffs-sem": ["@pierre/diffs@vendor/diffs.tgz", {}, "sha512-VfCgZJn1cS3qJ1jVORSxsdSC43Wb9DMxXqNJRrWW1iMV5uQhhG9+YRvug4Cmrboys6OC/xq/+/Gp9VBDNHJxcQ=="],
+    "wrappy": ["wrappy@1.0.2", "", {}, "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ=="]
+  }
+}"#;
+        let out = convert_lockfile_to_nix_expression(lock.into(), opts()).unwrap();
+        assert!(out.contains("wrappy@1.0.2"));
+        for absent in ["= copyPathToStore", "@t/app", "left", "diffs"] {
+            assert!(!out.contains(absent), "{absent} in {out}");
+        }
     }
 }

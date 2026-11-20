@@ -98,6 +98,12 @@ impl PackageDeserializer {
             Self::deserialize_tarball_package(specifier)
         } else if specifier.starts_with("github:") {
             Self::deserialize_github_package(specifier)
+        } else if !specifier.contains(':') {
+            // a local tarball: bun strips `file:` and records an integrity hash
+            Ok(Package::new(
+                self.name,
+                Fetcher::CopyToStore { path: specifier },
+            ))
         } else {
             Self::deserialize_git_package(specifier)
         }
